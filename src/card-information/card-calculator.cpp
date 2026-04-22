@@ -138,20 +138,41 @@ bool CardCalculator::isCertainlyLessThan(
     bool checkEventBonus
 )
 {
-    bool ret = false;
+    bool ret = true;
     if (checkPower)
         ret = (ret && cardDetail0.power.isCertainlyLessThan(cardDetail1.power));
     if (checkSkill)
         ret = (ret && cardDetail0.skill.isCertainlyLessThan(cardDetail1.skill));
     if (checkEventBonus)
-        ret = (ret && (cardDetail0.maxEventBonus == std::nullopt || cardDetail1.minEventBonus == std::nullopt ||
-            cardDetail0.maxEventBonus.value() < cardDetail1.minEventBonus.value()));
+        ret = (ret && (
+            cardDetail0.maxEventBonus == std::nullopt
+            || cardDetail1.minEventBonus == std::nullopt
+            || cardDetail0.maxEventBonus.value() < cardDetail1.minEventBonus.value()
+        ));
     return ret;
 }
 
-SupportDeckCard CardCalculator::getSupportDeckCard(const UserCard &card, int eventId, int specialCharacterId)
+SupportDeckCard CardCalculator::getSupportDeckCard(
+    const UserCard &card,
+    int eventId,
+    int specialCharacterId,
+    bool masterMax,
+    bool skillMax
+)
 {
-    auto bonus = this->bloomEventCalculator.getCardSupportDeckBonus(card, eventId, specialCharacterId);
+    UserCard supportCard = card;
+    if (masterMax || skillMax) {
+        auto& cards = this->dataProvider.masterData->cards;
+        auto cardData = findOrThrow(cards, [&](const Card& it) {
+            return it.id == card.cardId;
+        }, [&]() { return "Support Deck Card not found for cardId=" + std::to_string(card.cardId); });
+        CardConfig cfg{};
+        cfg.masterMax = masterMax;
+        cfg.skillMax = skillMax;
+        supportCard = this->cardService.applyCardConfig(card, cardData, cfg);
+    }
+
+    auto bonus = this->bloomEventCalculator.getCardSupportDeckBonus(supportCard, eventId, specialCharacterId);
     return SupportDeckCard{
         .cardId = card.cardId,
         .bonus = bonus.value_or(0.0),

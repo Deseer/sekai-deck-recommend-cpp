@@ -39,6 +39,8 @@ static const std::set<std::string> VALID_ALGORITHMS = {
     "sa",
     "dfs",
     "ga",
+    "dfs_ga",
+    "rl",
 };
 
 static const std::set<std::string> VALID_MUSIC_DIFFS = {
@@ -181,7 +183,7 @@ struct PySingleCardConfig {
     }
 };
 
-// python传入的模拟退火参数
+// python传入的模拟退火兼容参数
 struct PySaOptions {
     std::optional<int> run_num;
     std::optional<int> seed;
@@ -290,6 +292,8 @@ struct PyDeckRecommendOptions {
     std::optional<PyCardConfig> rarity_birthday_config;
     std::optional<PyCardConfig> rarity_4_config;
     std::optional<std::vector<PySingleCardConfig>> single_card_configs;
+    std::optional<bool> support_master_max;
+    std::optional<bool> support_skill_max;
     std::optional<bool> filter_other_unit;
     std::optional<std::vector<int>> fixed_cards;
     std::optional<std::vector<int>> fixed_characters;
@@ -349,6 +353,10 @@ struct PyDeckRecommendOptions {
                 configs.append(config.to_dict());
             result["single_card_configs"] = configs;
         }
+        if (support_master_max.has_value())
+            result["support_master_max"] = support_master_max.value();
+        if (support_skill_max.has_value())
+            result["support_skill_max"] = support_skill_max.value();
         if (filter_other_unit.has_value())
             result["filter_other_unit"] = filter_other_unit.value();
         if (fixed_cards.has_value())
@@ -379,7 +387,6 @@ struct PyDeckRecommendOptions {
             result["skill_order_choose_strategy"] = skill_order_choose_strategy.value();
         if (specific_skill_order.has_value())
             result["specific_skill_order"] = specific_skill_order.value();
-        
         if (sa_options.has_value())
             result["sa_options"] = sa_options->to_dict();
         if (ga_options.has_value())
@@ -427,6 +434,10 @@ struct PyDeckRecommendOptions {
                 options.single_card_configs->push_back(PySingleCardConfig::from_dict(item.cast<py::dict>()));
             }
         }
+        if (dict.contains("support_master_max"))
+            options.support_master_max = dict["support_master_max"].cast<bool>();
+        if (dict.contains("support_skill_max"))
+            options.support_skill_max = dict["support_skill_max"].cast<bool>();
         
         if (dict.contains("filter_other_unit"))
             options.filter_other_unit = dict["filter_other_unit"].cast<bool>();
@@ -458,7 +469,6 @@ struct PyDeckRecommendOptions {
             options.skill_order_choose_strategy = dict["skill_order_choose_strategy"].cast<std::string>();
         if (dict.contains("specific_skill_order"))
             options.specific_skill_order = dict["specific_skill_order"].cast<std::vector<int>>();
-
         if (dict.contains("sa_options"))
             options.sa_options = PySaOptions::from_dict(dict["sa_options"].cast<py::dict>());
         if (dict.contains("ga_options"))
@@ -845,6 +855,10 @@ class SekaiDeckRecommend {
                 config.algorithm = RecommendAlgorithm::DFS;
             else if (algorithm == "ga")
                 config.algorithm = RecommendAlgorithm::GA;
+            else if (algorithm == "dfs_ga")
+                config.algorithm = RecommendAlgorithm::DFS_GA;
+            else if (algorithm == "rl")
+                config.algorithm = RecommendAlgorithm::RL;
 
             // filter other unit
             if (pyoptions.filter_other_unit.has_value()) {
@@ -1045,19 +1059,23 @@ class SekaiDeckRecommend {
                     config.singleCardConfig[card_config.card_id] = cfg;
                 }
             }
+            if (pyoptions.support_master_max.has_value())
+                config.supportMasterMax = pyoptions.support_master_max.value();
+            if (pyoptions.support_skill_max.has_value())
+                config.supportSkillMax = pyoptions.support_skill_max.value();
 
             // sa config
-            if (config.algorithm == RecommendAlgorithm::SA && pyoptions.sa_options.has_value()) {
+            if (algorithm == "sa" && pyoptions.sa_options.has_value()) {
                 auto sa_options = pyoptions.sa_options.value();
 
                 if (sa_options.run_num.has_value())
                     config.saRunCount = sa_options.run_num.value();
                 if (config.saRunCount < 1)
                     throw std::invalid_argument("Invalid sa run count: " + std::to_string(config.saRunCount));
-                
+
                 if (sa_options.seed.has_value())
                     config.saSeed = sa_options.seed.value();
-                
+
                 if (sa_options.max_iter.has_value())
                     config.saMaxIter = sa_options.max_iter.value();
                 if (config.saMaxIter < 1)
@@ -1088,7 +1106,7 @@ class SekaiDeckRecommend {
             }
 
             // ga config
-            if (config.algorithm == RecommendAlgorithm::GA && pyoptions.ga_options.has_value()) {
+            if (pyoptions.ga_options.has_value()) {
                 auto ga_options = pyoptions.ga_options.value();
 
                 if (ga_options.seed.has_value())
@@ -1354,6 +1372,8 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("rarity_birthday_config", &PyDeckRecommendOptions::rarity_birthday_config)
         .def_readwrite("rarity_4_config", &PyDeckRecommendOptions::rarity_4_config)
         .def_readwrite("single_card_configs", &PyDeckRecommendOptions::single_card_configs)
+        .def_readwrite("support_master_max", &PyDeckRecommendOptions::support_master_max)
+        .def_readwrite("support_skill_max", &PyDeckRecommendOptions::support_skill_max)
         .def_readwrite("filter_other_unit", &PyDeckRecommendOptions::filter_other_unit)
         .def_readwrite("fixed_cards", &PyDeckRecommendOptions::fixed_cards)
         .def_readwrite("fixed_characters", &PyDeckRecommendOptions::fixed_characters)
@@ -1428,4 +1448,3 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def("update_musicmetas_from_string", &SekaiDeckRecommend::update_musicmetas_from_string)
         .def("recommend", &SekaiDeckRecommend::recommend);
 }
-
