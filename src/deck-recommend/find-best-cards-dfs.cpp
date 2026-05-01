@@ -81,17 +81,15 @@ static double calcScoreUpperBound(
         return std::numeric_limits<double>::infinity();
     }
 
-    std::array<double, 5> skills{};
-    int skillCount = 0;
+    std::vector<double> skills{};
+    skills.reserve(member);
     for (const auto* deckCard : deckCards) {
-        skills[skillCount++] = deckCard->skill.max;
+        skills.push_back(deckCard->skill.max);
     }
 
+    std::vector<double> remainingSkills{};
+    remainingSkills.reserve(cardDetails.size());
     for (const auto& card : cardDetails) {
-        if (skillCount >= member) {
-            break;
-        }
-
         bool duplicated = false;
         for (const auto* deckCard : deckCards) {
             if (deckCard->cardId == card.cardId) {
@@ -106,14 +104,22 @@ static double calcScoreUpperBound(
             continue;
         }
 
-        skills[skillCount++] = card.skill.max;
+        remainingSkills.push_back(card.skill.max);
     }
 
-    if (skillCount < member) {
+    std::sort(remainingSkills.begin(), remainingSkills.end(), std::greater<>());
+    for (const auto skill : remainingSkills) {
+        if (int(skills.size()) >= member) {
+            break;
+        }
+        skills.push_back(skill);
+    }
+
+    if (int(skills.size()) < member) {
         return std::numeric_limits<double>::infinity();
     }
 
-    std::sort(skills.begin(), skills.begin() + member, std::greater<>());
+    std::sort(skills.begin(), skills.end(), std::greater<>());
 
     DeckDetail optimisticDeck{};
     optimisticDeck.power.total = powerUpperBound;

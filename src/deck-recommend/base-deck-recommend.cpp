@@ -335,10 +335,10 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 return std::make_tuple(a.skill.max, a.skill.min, a.cardId)
                     > std::make_tuple(b.skill.max, b.skill.min, b.cardId);
             });
-        } else if (config.target == RecommendTarget::Mysekai) {
+        } else if (config.target == RecommendTarget::Score || config.target == RecommendTarget::Mysekai) {
             std::sort(input.begin(), input.end(), [&](const CardDetail& a, const CardDetail& b) {
-                return std::make_tuple(scoreHeuristic(a), cardEventBonus(a), a.power.max, a.cardId)
-                    > std::make_tuple(scoreHeuristic(b), cardEventBonus(b), b.power.max, b.cardId);
+                return std::make_tuple(scoreHeuristic(a), a.skill.max, cardEventBonus(a), a.power.max, a.cardId)
+                    > std::make_tuple(scoreHeuristic(b), b.skill.max, cardEventBonus(b), b.power.max, b.cardId);
             });
         } else {
             std::sort(input.begin(), input.end(), [](const CardDetail& a, const CardDetail& b) {
@@ -1161,6 +1161,12 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
 
         long long rlSeedBase = config.gaSeed == -1 ? nowNs() : config.gaSeed;
         Rng rlRng(rlSeedBase);
+        double rlMaxPower = 1.0;
+        double rlMaxSkill = 1.0;
+        for (const auto& card : fullSorted) {
+            rlMaxPower = std::max(rlMaxPower, double(card.power.max));
+            rlMaxSkill = std::max(rlMaxSkill, double(card.skill.max));
+        }
 
         auto calcStoredSeedHash = [&](const std::array<int, 5>& cardIds, int size) {
             auto ids = cardIds;
@@ -1263,8 +1269,6 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
 
         auto calcActionFeatures = [&](const std::vector<const CardDetail*>& deck, const CardDetail& candidate) {
             std::array<double, RL_FEATURE_DIM> features{};
-            double maxPower = std::max(1, fullSorted.empty() ? 1 : fullSorted.front().power.max);
-            double maxSkill = std::max(1, fullSorted.empty() ? 1 : fullSorted.front().skill.max);
             double eventNorm = cardEventBonus(candidate) / 70.0;
             int nextPos = int(deck.size());
             int sameAttrCount = 0;
@@ -1291,8 +1295,8 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 && remainingRequiredCharacters.size() > std::size_t(fixedCharacterIndex);
 
             features[0] = 1.0;
-            features[1] = candidate.power.max / maxPower;
-            features[2] = config.target == RecommendTarget::Mysekai ? eventNorm : candidate.skill.max / maxSkill;
+            features[1] = candidate.power.max / rlMaxPower;
+            features[2] = config.target == RecommendTarget::Mysekai ? eventNorm : candidate.skill.max / rlMaxSkill;
             features[3] = leader ? double(candidate.attr == leader->attr) : 0.0;
             features[4] = leader ? double(sharesAnyUnit(*leader, candidate)) : 0.0;
             features[5] = requiredCharacter
@@ -1302,7 +1306,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             features[7] = double(sharedUnitCount + 1) / double(std::max(1, config.member));
             features[8] = double(nextPos) / double(std::max(1, config.member));
             features[9] = nextPos == int(fixedCards.size())
-                ? (config.target == RecommendTarget::Mysekai ? scoreHeuristic(candidate) : candidate.skill.max / maxSkill)
+                ? (config.target == RecommendTarget::Mysekai ? scoreHeuristic(candidate) : candidate.skill.max / rlMaxSkill)
                 : 0.0;
             features[10] = eventNorm;
             features[11] = candidate.supportDeckBonus.value_or(0.0) / 50.0;

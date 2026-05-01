@@ -44,6 +44,33 @@ struct Individual {
     }
 };
 
+static double calcSearchWeightValue(const CardDetail& card, RecommendTarget target) {
+    auto powerNorm = std::max(0.0, double(card.power.max) / POWER_MAX);
+    auto skillNorm = std::max(0.0, double(card.skill.max) / SKILL_MAX);
+    if (target == RecommendTarget::Skill) {
+        return std::max(1e-6, skillNorm);
+    }
+    if (target == RecommendTarget::Score) {
+        auto eventBonus = std::max(
+            card.maxEventBonus.value_or(0.0),
+            card.limitedEventBonus.value_or(0.0)
+        );
+        auto eventNorm = std::max(0.0, eventBonus / 70.0);
+        auto supportNorm = std::max(0.0, card.supportDeckBonus.value_or(0.0) / 50.0);
+        return std::max(1e-6, 0.70 * powerNorm + 0.95 * skillNorm + 0.20 * eventNorm + 0.10 * supportNorm);
+    }
+    if (target == RecommendTarget::Mysekai) {
+        auto eventBonus = std::max(
+            card.maxEventBonus.value_or(0.0),
+            card.limitedEventBonus.value_or(0.0)
+        );
+        auto eventNorm = std::max(0.0, eventBonus / 70.0);
+        auto supportNorm = std::max(0.0, card.supportDeckBonus.value_or(0.0) / 50.0);
+        return std::max(1e-6, 0.90 * powerNorm + 1.35 * eventNorm + 0.25 * supportNorm);
+    }
+    return std::max(1e-6, powerNorm);
+}
+
 // 计算随机选择权重（综合力/技能加成越大越容易被选中）
 std::vector<double> calcRandomSelectWeights(
     const std::vector<CardDetail>& cards, 
@@ -64,23 +91,8 @@ std::vector<double> calcRandomSelectWeights(
             continue;
         }
 
-        if (target == RecommendTarget::Skill) {
-            // 以技能加成的平方为权重以扩大差距
-            weights.push_back((double)card.skill.max * card.skill.max);
-        } else if (target == RecommendTarget::Mysekai) {
-            auto eventBonus = std::max(
-                card.maxEventBonus.value_or(0.0),
-                card.limitedEventBonus.value_or(0.0)
-            );
-            auto powerNorm = std::max(0.0, double(card.power.max) / POWER_MAX);
-            auto eventNorm = std::max(0.0, eventBonus / 70.0);
-            auto supportNorm = std::max(0.0, card.supportDeckBonus.value_or(0.0) / 50.0);
-            auto weight = 0.90 * powerNorm + 1.35 * eventNorm + 0.25 * supportNorm;
-            weights.push_back(std::max(1e-6, weight * weight));
-        } else {
-            // 以综合力的平方为权重以扩大差距
-            weights.push_back((double)card.power.max * card.power.max);
-        }
+        auto value = calcSearchWeightValue(card, target);
+        weights.push_back(value * value);
     }
     // 归一化 & 计算前缀和
     double sum = std::accumulate(weights.begin(), weights.end(), 0.0);

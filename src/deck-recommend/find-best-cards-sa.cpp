@@ -43,6 +43,43 @@ void BaseDeckRecommend::findBestCardsSA(
     for (const auto& card : cardDetails) {
         charaCardDetails[card.characterId].push_back(card);
     }
+    auto searchValue = [&](const CardDetail& card) {
+        auto powerNorm = std::max(0.0, double(card.power.max) / POWER_MAX);
+        auto skillNorm = std::max(0.0, double(card.skill.max) / SKILL_MAX);
+        if (cfg.target == RecommendTarget::Skill) {
+            return skillNorm;
+        }
+        if (cfg.target == RecommendTarget::Score) {
+            auto eventBonus = std::max(
+                card.maxEventBonus.value_or(0.0),
+                card.limitedEventBonus.value_or(0.0)
+            );
+            auto eventNorm = std::max(0.0, eventBonus / 70.0);
+            auto supportNorm = std::max(0.0, card.supportDeckBonus.value_or(0.0) / 50.0);
+            return 0.70 * powerNorm + 0.95 * skillNorm + 0.20 * eventNorm + 0.10 * supportNorm;
+        }
+        if (cfg.target == RecommendTarget::Mysekai) {
+            auto eventBonus = std::max(
+                card.maxEventBonus.value_or(0.0),
+                card.limitedEventBonus.value_or(0.0)
+            );
+            auto eventNorm = std::max(0.0, eventBonus / 70.0);
+            auto supportNorm = std::max(0.0, card.supportDeckBonus.value_or(0.0) / 50.0);
+            return 0.90 * powerNorm + 1.35 * eventNorm + 0.25 * supportNorm;
+        }
+        return powerNorm;
+    };
+    auto strongerCard = [&](const CardDetail* a, const CardDetail* b) {
+        auto av = searchValue(*a);
+        auto bv = searchValue(*b);
+        if (std::abs(av - bv) > 1e-12) {
+            return av > bv;
+        }
+        if (a->power.max != b->power.max) {
+            return a->power.max > b->power.max;
+        }
+        return a->cardId < b->cardId;
+    };
 
     auto evaluateDeck = [&](const std::vector<const CardDetail*>& deck) {
         auto hash = calcDeckHash(deck);
@@ -84,8 +121,8 @@ void BaseDeckRecommend::findBestCardsSA(
                 if (cards.empty()) {
                     return;
                 }
-                auto& max_card = *std::max_element(cards.begin(), cards.end(), [](const CardDetail& a, const CardDetail& b) {
-                    return a.power.min != b.power.min ? a.power.min < b.power.min : a.cardId > b.cardId;
+                auto& max_card = *std::max_element(cards.begin(), cards.end(), [&](const CardDetail& a, const CardDetail& b) {
+                    return strongerCard(&b, &a);
                 });
                 deck.push_back(&max_card);
             }
@@ -102,8 +139,8 @@ void BaseDeckRecommend::findBestCardsSA(
                 if (remainingFixedCharacterSet.count(i)) {
                     continue;
                 }
-                auto& max_card = *std::max_element(cards.begin(), cards.end(), [](const CardDetail& a, const CardDetail& b) {
-                    return a.power.min != b.power.min ? a.power.min < b.power.min : a.cardId > b.cardId;
+                auto& max_card = *std::max_element(cards.begin(), cards.end(), [&](const CardDetail& a, const CardDetail& b) {
+                    return strongerCard(&b, &a);
                 });
                 deck.push_back(&max_card);
             }
@@ -118,9 +155,6 @@ void BaseDeckRecommend::findBestCardsSA(
             }
         }
 
-        auto strongerCard = [](const CardDetail* a, const CardDetail* b) {
-            return a->power.min != b->power.min ? a->power.min > b->power.min : a->cardId < b->cardId;
-        };
         if (!isChallengeLive && !remainingFixedCharacterSet.empty()) {
             std::vector<const CardDetail*> requiredDeck{};
             std::vector<const CardDetail*> flexibleDeck{};
